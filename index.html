@@ -4,59 +4,148 @@
 <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>Test AWS Lambda</title>
+    <title>Quintons Inventory App</title>
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="">
+    <link rel="stylesheet" href="css/style.css">
 </head>
 
 <body>
-    <h1>Simple Demo for PUT, GET, and DELETE</h1>
-    <p id="lambda-info">
-        <!-- loaded with AJAX -->
-    </p>
+    <header class="app-header">
+        <h1>Quintons Inventory App</h1>
+        <button id="load-items-btn" class="primary">Load All Items</button>
+    </header>
 
-    <hr>
-    <button id="send-data">Send Data</button>
-    <p>Sends an example JSON object to the server with id 11111</p>
+    <main class="container">
+        <section class="table-section">
+            <table id="items-table">
+                <thead>
+                    <tr>
+                        <th>Id</th>
+                        <th>Name</th>
+                        <th>Price</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="items-tbody">
+                    <!-- Items will be injected here -->
+                </tbody>
+            </table>
+        </section>
+
+        <hr>
+
+        <section class="form-section">
+            <h2>Add New Item to Database</h2>
+            <form id="add-item-form">
+                <div class="form-row">
+                    <label for="item-id">ID:</label>
+                    <input id="item-id" name="id" type="text" placeholder="Placeholder" required>
+                </div>
+                <div class="form-row">
+                    <label for="item-name">Name:</label>
+                    <input id="item-name" name="name" type="text" placeholder="Placeholder" required>
+                </div>
+                <div class="form-row">
+                    <label for="item-price">Price:</label>
+                    <input id="item-price" name="price" type="number" step="1" placeholder="Placeholder" required>
+                </div>
+                <div class="form-actions">
+                    <button class="primary" type="submit">Add Item</button>
+                </div>
+            </form>
+        </section>
+    </main>
+
     <script>
-        document.getElementById("send-data").onclick = function () {
-            let xhr = new XMLHttpRequest();
-            xhr.open("PUT", "Your Lambda here");
-            xhr.setRequestHeader("Content-Type", "application/json");
-            xhr.send(JSON.stringify({
-                "id": "6666666",
-                "price": 19,
-                "name": "test put value"
-            }));
+        // Base URL of AWS API Gateway / Lambda
+        const API_BASE = "https://xx3t86ykz9.execute-api.us-east-2.amazonaws.com/items";
+
+        const loadBtn = document.getElementById('load-items-btn');
+        const tbody = document.getElementById('items-tbody');
+        const form = document.getElementById('add-item-form');
+
+        async function getAllItems() {
+            const res = await fetch(API_BASE, { method: 'GET' });
+            const text = await res.text();
+            try {
+                const data = JSON.parse(text);
+                return Array.isArray(data) ? data : (data.items || data.body && JSON.parse(data.body) || []);
+            } catch (e) {
+                // If API returns a plain string, show nothing but avoid crash
+                console.warn('Non-JSON response:', text);
+                return [];
+            }
         }
-    </script>
 
-    <button id="load-data">Load Data</button>
-    <p>Loads data from the server</p>
-    <script>
-        document.getElementById("load-data").onclick = function () {
-            let lambda = document.getElementById("lambda-info");
-            let xhr = new XMLHttpRequest();
-            xhr.addEventListener("load", function () {
-                lambda.innerHTML = xhr.response;
+        function renderRows(items) {
+            tbody.innerHTML = '';
+            if (!items || items.length === 0) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = 4;
+                td.textContent = 'No items found.';
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+                return;
+            }
+            for (const item of items) {
+                const tr = document.createElement('tr');
+                const id = item.id ?? item.ID ?? item.ItemID ?? '';
+                const name = item.name ?? item.Name ?? '';
+                const price = item.price ?? item.Price ?? '';
+
+                tr.innerHTML = `
+                    <td>${id}</td>
+                    <td>${name}</td>
+                    <td>${price}</td>
+                    <td><button class="danger" data-id="${id}">Delete</button></td>
+                `;
+                tbody.appendChild(tr);
+            }
+        }
+
+        async function handleLoad() {
+            const items = await getAllItems();
+            renderRows(items);
+        }
+
+        async function addItem(payload) {
+            await fetch(API_BASE, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
             });
-            xhr.open("GET", "Your Lambda here");
-            xhr.send();
         }
 
-    </script>
-
-    <hr>
-    <button id="delete-data">Delete Data</button>
-    <p>Deletes a JSON object from the server with 11111</p>
-    <script>
-        document.getElementById("delete-data").onclick = function () {
-            let xhr = new XMLHttpRequest();
-            xhr.open("DELETE", "Your Lambda here");
-            xhr.setRequestHeader("Content-Type", "application/json");
-            xhr.send();
+        async function deleteItem(id) {
+            // Many APIs define DELETE as /items/{id} (path parameter)
+            const base = API_BASE.endsWith('/') ? API_BASE.slice(0, -1) : API_BASE;
+            const url = `${base}/${encodeURIComponent(id)}`;
+            await fetch(url, { method: 'DELETE' });
         }
+
+        loadBtn.addEventListener('click', handleLoad);
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('item-id').value.trim();
+            const name = document.getElementById('item-name').value.trim();
+            const price = Number(document.getElementById('item-price').value);
+            if (!id || !name || Number.isNaN(price)) return;
+            await addItem({ id, name, price });
+            form.reset();
+            await handleLoad();
+        });
+
+        tbody.addEventListener('click', async (e) => {
+            const target = e.target;
+            if (target && target.matches('button[data-id]')) {
+                const id = target.getAttribute('data-id');
+                await deleteItem(id);
+                await handleLoad();
+            }
+        });
     </script>
 </body>
 
